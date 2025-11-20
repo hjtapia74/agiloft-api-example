@@ -286,10 +286,6 @@ Contributions are welcome! This is an example project to help developers learn A
 
 [Add your license here]
 
-## Related Projects
-
-- [agiloft-mcp-server](https://github.com/hjtapia74/agiloft-mcp-server) - Full MCP server implementation for Agiloft
-
 ## Support
 
 For questions or issues:
