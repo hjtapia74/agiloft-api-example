@@ -1,0 +1,16 @@
+{
+  "_comments": {
+    "base_url": "Base URL for your Agiloft instance REST API endpoint",
+    "username": "Your Agiloft username",
+    "password": "Your Agiloft password (consider using AGILOFT_PASSWORD environment variable instead)",
+    "kb": "Knowledge Base name",
+    "language": "Language code (en, es, fr, etc.)"
+  },
+  "agiloft": {
+    "base_url": "https://your-instance.saas.agiloft.com/ewws/alrest/YourKB",
+    "username": "your-username",
+    "password": "your-password",
+    "kb": "YourKB",
+    "language": "en"
+  }
+}
