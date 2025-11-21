@@ -49,3 +49,13 @@ config.json
 # Exported CSV files
 agiloft_contracts_*.csv
 *.csv
+
+# Debug scripts (not part of main library)
+debug_oauth2.py
+debug_token_exchange.py
+
+# Documentation PDFs (reference only)
+*.pdf
+
+# Local Claude Code context (project-specific)
+CLAUDE.md

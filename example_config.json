@@ -1,16 +1,28 @@
 {
   "_comments": {
     "base_url": "Base URL for your Agiloft instance REST API endpoint",
-    "username": "Your Agiloft username",
-    "password": "Your Agiloft password (consider using AGILOFT_PASSWORD environment variable instead)",
+    "username": "Your Agiloft username (required for legacy auth)",
+    "password": "Your Agiloft password (required for legacy auth, consider using AGILOFT_PASSWORD environment variable)",
     "kb": "Knowledge Base name",
-    "language": "Language code (en, es, fr, etc.)"
+    "language": "Language code (en, es, fr, etc.)",
+    "auth_method": "Authentication method: 'legacy' (username/password) or 'oauth2' (client credentials)",
+    "oauth2": {
+      "client_id": "OAuth2 Client ID from Agiloft OAuth2 Client Setup",
+      "client_secret": "OAuth2 Client Secret (consider using AGILOFT_OAUTH2_CLIENT_SECRET environment variable)",
+      "token_endpoint": "OAuth2 token endpoint URL (e.g., https://your-instance.saas.agiloft.com/oauth/token)"
+    }
   },
   "agiloft": {
     "base_url": "https://your-instance.saas.agiloft.com/ewws/alrest/YourKB",
+    "kb": "YourKB",
+    "language": "en",
+    "auth_method": "legacy",
     "username": "your-username",
     "password": "your-password",
-    "kb": "YourKB",
-    "language": "en"
+    "oauth2": {
+      "client_id": "your-oauth2-client-id",
+      "client_secret": "your-oauth2-client-secret",
+      "token_endpoint": "https://your-instance.saas.agiloft.com/oauth/token"
+    }
   }
 }

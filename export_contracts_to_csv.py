@@ -60,9 +60,18 @@ async def export_contracts_to_csv(output_file: str = None):
     # Connect to Agiloft and retrieve contracts
     async with AgiloftClient(config) as client:
         try:
-            logger.info("Authenticating with Agiloft...")
-            await client.ensure_authenticated()
-            logger.info("Authentication successful!")
+            # Handle OAuth2 Authorization Code flow (requires browser)
+            auth_method = config.get('agiloft.auth_method', 'legacy')
+            if auth_method == 'oauth2_authorization_code':
+                logger.info("Using OAuth2 Authorization Code flow...")
+                print("\nIMPORTANT: Your browser will open for you to log in to Agiloft.")
+                print("After logging in, you'll be redirected back to this application.\n")
+                await client.authenticate_with_browser()
+                logger.info("OAuth2 authentication successful!")
+            else:
+                logger.info("Authenticating with Agiloft...")
+                await client.ensure_authenticated()
+                logger.info("Authentication successful!")
 
             logger.info("Retrieving all contracts...")
             # Search with no query to get all contracts

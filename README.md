@@ -5,6 +5,7 @@ A simple Python example demonstrating how to interact with Agiloft's REST API. T
 ## Features
 
 - **Simple Agiloft API Client**: Easy-to-use Python client for Agiloft REST API
+- **Multiple Authentication Methods**: Supports both OAuth2 client credentials and legacy username/password authentication
 - **Automatic Authentication**: Handles Bearer token authentication with automatic refresh
 - **CSV Export Tool**: Export all contracts from Agiloft to CSV format
 - **Flexible Configuration**: Support for both config files and environment variables
@@ -24,7 +25,9 @@ This example is perfect for:
 
 - Python 3.8 or higher
 - Access to an Agiloft instance with REST API enabled
-- Agiloft credentials (username, password, knowledge base name)
+- Authentication credentials (choose one):
+  - **OAuth2**: Client ID and Client Secret from Agiloft OAuth2 Client Setup (recommended)
+  - **Legacy**: Username, password, and knowledge base name
 
 ### Setup
 
@@ -48,11 +51,24 @@ pip install -r requirements.txt
    ```
 
    **Option B: Environment Variables** (recommended for production)
+
+   For **OAuth2 authentication** (recommended):
    ```bash
    export AGILOFT_BASE_URL="https://your-instance.saas.agiloft.com/ewws/alrest/YourKB"
+   export AGILOFT_KB="YourKB"
+   export AGILOFT_AUTH_METHOD="oauth2"
+   export AGILOFT_OAUTH2_CLIENT_ID="your-client-id"
+   export AGILOFT_OAUTH2_CLIENT_SECRET="your-client-secret"
+   export AGILOFT_OAUTH2_TOKEN_ENDPOINT="https://your-instance.saas.agiloft.com/oauth/token"
+   ```
+
+   For **legacy authentication**:
+   ```bash
+   export AGILOFT_BASE_URL="https://your-instance.saas.agiloft.com/ewws/alrest/YourKB"
+   export AGILOFT_KB="YourKB"
+   export AGILOFT_AUTH_METHOD="legacy"
    export AGILOFT_USERNAME="your-username"
    export AGILOFT_PASSWORD="your-password"
-   export AGILOFT_KB="YourKB"
    ```
 
 ## Usage
@@ -128,14 +144,39 @@ if __name__ == "__main__":
 
 Configuration priority: **Environment Variables > config.json > defaults**
 
+### Authentication Methods
+
+This client supports two authentication methods:
+
+1. **OAuth2 Client Credentials** (recommended) - More secure, uses client ID and secret
+2. **Legacy Username/Password** - Traditional authentication method
+
+Set `auth_method` to `"oauth2"` or `"legacy"` to choose your authentication method.
+
 ### Required Settings
+
+#### Common Settings (both auth methods)
 
 | Setting | Environment Variable | Description |
 |---------|---------------------|-------------|
 | `agiloft.base_url` | `AGILOFT_BASE_URL` | Full REST API endpoint URL |
+| `agiloft.kb` | `AGILOFT_KB` | Knowledge base name |
+| `agiloft.auth_method` | `AGILOFT_AUTH_METHOD` | Authentication method: `"oauth2"` or `"legacy"` |
+
+#### OAuth2 Authentication Settings
+
+| Setting | Environment Variable | Description |
+|---------|---------------------|-------------|
+| `agiloft.oauth2.client_id` | `AGILOFT_OAUTH2_CLIENT_ID` | OAuth2 Client ID from Agiloft |
+| `agiloft.oauth2.client_secret` | `AGILOFT_OAUTH2_CLIENT_SECRET` | OAuth2 Client Secret |
+| `agiloft.oauth2.token_endpoint` | `AGILOFT_OAUTH2_TOKEN_ENDPOINT` | OAuth2 token endpoint URL |
+
+#### Legacy Authentication Settings
+
+| Setting | Environment Variable | Description |
+|---------|---------------------|-------------|
 | `agiloft.username` | `AGILOFT_USERNAME` | Your Agiloft username |
 | `agiloft.password` | `AGILOFT_PASSWORD` | Your Agiloft password |
-| `agiloft.kb` | `AGILOFT_KB` | Knowledge base name |
 
 ### Optional Settings
 
@@ -145,19 +186,68 @@ Configuration priority: **Environment Variables > config.json > defaults**
 
 ### Example config.json
 
+**OAuth2 Authentication:**
 ```json
 {
   "agiloft": {
     "base_url": "https://your-instance.saas.agiloft.com/ewws/alrest/YourKB",
-    "username": "admin",
-    "password": "your-password",
     "kb": "YourKB",
-    "language": "en"
+    "language": "en",
+    "auth_method": "oauth2",
+    "oauth2": {
+      "client_id": "your-oauth2-client-id",
+      "client_secret": "your-oauth2-client-secret",
+      "token_endpoint": "https://your-instance.saas.agiloft.com/oauth/token"
+    }
+  }
+}
+```
+
+**Legacy Authentication:**
+```json
+{
+  "agiloft": {
+    "base_url": "https://your-instance.saas.agiloft.com/ewws/alrest/YourKB",
+    "kb": "YourKB",
+    "language": "en",
+    "auth_method": "legacy",
+    "username": "admin",
+    "password": "your-password"
   }
 }
 ```
 
 **Security Note:** Never commit `config.json` to version control. Use environment variables for production deployments.
+
+### Setting Up OAuth2 in Agiloft
+
+To use OAuth2 authentication, you need to create an OAuth2 application in your Agiloft instance:
+
+1. **Access OAuth2 Setup**:
+   - Log into your Agiloft instance as an administrator
+   - Click the Setup gear in the top-right corner
+   - Navigate to **Integration > OAuth2 Client Setup**
+
+2. **Create API Application**:
+   - On the API Application screen, click **New**
+   - This opens the API Application Settings wizard
+
+3. **Configure the Application**:
+   - Click **Enable** to activate the application
+   - This generates your **Client ID** and **Client Secret**
+   - Associate the application with a specific user in your KB
+   - All REST API requests will be executed with this user's permissions
+
+4. **Save Credentials**:
+   - Copy the generated **Client ID** and **Client Secret**
+   - Add these to your `config.json` or set as environment variables
+   - The token endpoint is typically: `https://your-instance.saas.agiloft.com/oauth/token`
+
+5. **Configure Token Expiration** (optional):
+   - You can customize token expiration settings in the OAuth2 setup
+   - Default expiration is typically 15 minutes (900 seconds)
+
+**Note**: OAuth2 requires the Advanced or Premium edition of Agiloft.
 
 ## Project Structure
 
@@ -188,7 +278,8 @@ The `AgiloftClient` class provides methods for interacting with Agiloft's REST A
 - `delete_contract(contract_id, delete_rule)` - Delete a contract
 
 **Authentication:**
-- Automatic token management with 15-minute expiration
+- Multiple authentication methods (OAuth2 and legacy username/password)
+- Automatic token management with configurable expiration
 - Proactive token refresh (1 minute before expiration)
 - Automatic retry on 401 errors
 - Thread-safe authentication with async locks
@@ -260,7 +351,15 @@ except AgiloftAPIError as e:
 
 ### Authentication Errors
 
-- Verify your credentials are correct
+**For OAuth2:**
+- Verify your Client ID and Client Secret are correct
+- Check that the token endpoint URL is correct (typically `/oauth/token`)
+- Ensure the OAuth2 application is enabled in Agiloft
+- Verify you have Advanced or Premium edition of Agiloft
+- Check that the associated user has appropriate API permissions
+
+**For Legacy Authentication:**
+- Verify your username and password are correct
 - Check that the base URL includes the full REST API path
 - Ensure your Agiloft user has API access permissions
 

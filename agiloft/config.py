@@ -59,7 +59,16 @@ class Config:
                 "username": "",
                 "password": "",
                 "kb": "",
-                "language": "en"
+                "language": "en",
+                "auth_method": "legacy",  # "legacy", "oauth2_client_credentials", or "oauth2_authorization_code"
+                "oauth2": {
+                    "client_id": "",
+                    "client_secret": "",
+                    "token_endpoint": "",
+                    "authorization_endpoint": "",
+                    "redirect_uri": "http://localhost:8080/callback",
+                    "scope": ""
+                }
             }
         }
 
@@ -78,7 +87,14 @@ class Config:
             "AGILOFT_USERNAME": "agiloft.username",
             "AGILOFT_PASSWORD": "agiloft.password",
             "AGILOFT_KB": "agiloft.kb",
-            "AGILOFT_LANGUAGE": "agiloft.language"
+            "AGILOFT_LANGUAGE": "agiloft.language",
+            "AGILOFT_AUTH_METHOD": "agiloft.auth_method",
+            "AGILOFT_OAUTH2_CLIENT_ID": "agiloft.oauth2.client_id",
+            "AGILOFT_OAUTH2_CLIENT_SECRET": "agiloft.oauth2.client_secret",
+            "AGILOFT_OAUTH2_TOKEN_ENDPOINT": "agiloft.oauth2.token_endpoint",
+            "AGILOFT_OAUTH2_AUTHORIZATION_ENDPOINT": "agiloft.oauth2.authorization_endpoint",
+            "AGILOFT_OAUTH2_REDIRECT_URI": "agiloft.oauth2.redirect_uri",
+            "AGILOFT_OAUTH2_SCOPE": "agiloft.oauth2.scope"
         }
 
         for env_var, config_path in env_mappings.items():
@@ -140,12 +156,34 @@ class Config:
 
     def validate(self) -> bool:
         """Validate that required configuration is present."""
+        # Common required fields
         required_fields = [
             "agiloft.base_url",
-            "agiloft.username",
-            "agiloft.password",
             "agiloft.kb"
         ]
+
+        auth_method = self.get("agiloft.auth_method", "legacy")
+
+        # Auth method specific required fields
+        if auth_method == "oauth2_client_credentials":
+            required_fields.extend([
+                "agiloft.oauth2.client_id",
+                "agiloft.oauth2.client_secret",
+                "agiloft.oauth2.token_endpoint"
+            ])
+        elif auth_method == "oauth2_authorization_code":
+            required_fields.extend([
+                "agiloft.oauth2.client_id",
+                "agiloft.oauth2.client_secret",
+                "agiloft.oauth2.authorization_endpoint",
+                "agiloft.oauth2.token_endpoint",
+                "agiloft.oauth2.redirect_uri"
+            ])
+        else:  # legacy authentication
+            required_fields.extend([
+                "agiloft.username",
+                "agiloft.password"
+            ])
 
         missing_fields = []
         for field in required_fields:
@@ -154,7 +192,7 @@ class Config:
                 missing_fields.append(field)
 
         if missing_fields:
-            logger.error(f"Missing required configuration fields: {missing_fields}")
+            logger.error(f"Missing required configuration fields for {auth_method} authentication: {missing_fields}")
             return False
 
         return True
@@ -166,6 +204,10 @@ class Config:
     def __str__(self) -> str:
         """String representation (with sensitive data masked)."""
         safe_config = self.to_dict()
-        if 'agiloft' in safe_config and 'password' in safe_config['agiloft']:
-            safe_config['agiloft']['password'] = '***masked***'
+        if 'agiloft' in safe_config:
+            if 'password' in safe_config['agiloft']:
+                safe_config['agiloft']['password'] = '***masked***'
+            if 'oauth2' in safe_config['agiloft']:
+                if 'client_secret' in safe_config['agiloft']['oauth2']:
+                    safe_config['agiloft']['oauth2']['client_secret'] = '***masked***'
         return json.dumps(safe_config, indent=2)
