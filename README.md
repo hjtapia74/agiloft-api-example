@@ -1,5 +1,11 @@
 # Agiloft API Example
 
+![Python](https://img.shields.io/badge/python-v3.8+-blue.svg)
+![aiohttp](https://img.shields.io/badge/aiohttp-v3.8+-green.svg)
+![OAuth2](https://img.shields.io/badge/OAuth2-Authorization%20Code-orange.svg)
+![REST API](https://img.shields.io/badge/REST-API-lightgrey.svg)
+![Status](https://img.shields.io/badge/status-active-success.svg)
+
 A simple Python example demonstrating how to interact with Agiloft's REST API. This repository provides a clean, standalone implementation for connecting to Agiloft and exporting contract data to CSV.
 
 ## Features
