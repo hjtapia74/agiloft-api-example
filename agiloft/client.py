@@ -7,6 +7,7 @@ Automatically manages token refresh for the 15-minute expiration window.
 
 import aiohttp
 import asyncio
+import html
 import json
 import logging
 from datetime import datetime, timedelta
@@ -129,10 +130,10 @@ class AgiloftClient:
                 result = data.get('result', {})
                 self.access_token = result.get('access_token')
                 self.refresh_token = result.get('refresh_token')
-                expires_in = result.get('expires_in', 15)  # Default 15 minutes
+                expires_in = result.get('expires_in', 900)  # Default 900 seconds (15 minutes)
 
-                # Calculate expiration time
-                self.token_expires_at = datetime.now() + timedelta(minutes=expires_in)
+                # Calculate expiration time (Agiloft returns expires_in in seconds)
+                self.token_expires_at = datetime.now() + timedelta(seconds=expires_in)
 
                 logger.info(f"Authentication successful. Token expires at {self.token_expires_at}")
 
@@ -180,15 +181,9 @@ class AgiloftClient:
                     logger.error(error_msg)
                     raise AgiloftAuthError(error_msg)
 
-                # Token expiration (in seconds for OAuth2 standard)
-                expires_in = data.get('expires_in', 900)  # Default 15 minutes (900 seconds)
-
-                # Some implementations may return expires_in in seconds, others in minutes
-                # Detect and handle both cases
-                if expires_in > 3600:  # Likely in seconds if > 1 hour
-                    self.token_expires_at = datetime.now() + timedelta(seconds=expires_in)
-                else:  # Likely in minutes
-                    self.token_expires_at = datetime.now() + timedelta(minutes=expires_in)
+                # Token expiration (Agiloft returns expires_in in seconds)
+                expires_in = data.get('expires_in', 900)  # Default 900 seconds (15 minutes)
+                self.token_expires_at = datetime.now() + timedelta(seconds=expires_in)
 
                 # Refresh token (optional for client credentials flow)
                 self.refresh_token = data.get('refresh_token')
@@ -257,8 +252,9 @@ class AgiloftClient:
 
             if error:
                 logger.error(f"Authorization error: {error}")
+                safe_error = html.escape(str(error))
                 return web.Response(
-                    text=f"<html><body><h1>Authorization Failed</h1><p>Error: {error}</p><p>You can close this window.</p></body></html>",
+                    text=f"<html><body><h1>Authorization Failed</h1><p>Error: {safe_error}</p><p>You can close this window.</p></body></html>",
                     content_type='text/html'
                 )
 
@@ -432,13 +428,13 @@ class AgiloftClient:
                     # Token might be expired, try re-authenticating once
                     logger.warning(f"Received 401 for {method} {url}, attempting re-authentication...")
                     await self._authenticate()
-                    
+
                     # Retry the request with new token
                     kwargs['headers'] = self._get_auth_headers()
                     async with self.session.request(method, url, **kwargs) as retry_response:
                         response_text = await retry_response.text()
                         response_headers = dict(retry_response.headers)
-                        if retry_response.status != 200:
+                        if retry_response.status not in (200, 201, 202, 204):
                             error_msg = f"API request failed after re-auth: {retry_response.status} - {response_text}"
                             logger.error(f"{error_msg} (URL: {url}, Headers: {response_headers})")
                             raise AgiloftAPIError(
@@ -446,9 +442,11 @@ class AgiloftClient:
                                 status_code=retry_response.status,
                                 response_text=response_text
                             )
+                        if retry_response.status == 204:
+                            return {}
                         return await retry_response.json()
-                        
-                elif response.status != 200:
+
+                elif response.status not in (200, 201, 202, 204):
                     error_msg = f"API request failed: {response.status} - {response_text}"
                     logger.error(f"{error_msg} (URL: {url}, Method: {method}, Headers: {response_headers})")
                     raise AgiloftAPIError(
@@ -456,7 +454,9 @@ class AgiloftClient:
                         status_code=response.status,
                         response_text=response_text
                     )
-                    
+
+                if response.status == 204:
+                    return {}
                 return await response.json()
                 
         except aiohttp.ClientError as e:
