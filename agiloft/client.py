@@ -51,6 +51,7 @@ class AgiloftClient:
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = None
         self.token_expires_at: Optional[datetime] = None
+        self.api_access_point: Optional[str] = None
         self._auth_lock = asyncio.Lock()
         
     async def __aenter__(self):
@@ -78,11 +79,20 @@ class AgiloftClient:
         async with self._auth_lock:
             # Check if we need to authenticate or refresh
             now = datetime.now()
-            
-            if (self.access_token is None or 
-                self.token_expires_at is None or 
+
+            if (self.access_token is None or
+                self.token_expires_at is None or
                 now >= self.token_expires_at - timedelta(minutes=1)):  # Refresh 1 min early
-                
+
+                # Try token refresh first if we have a refresh token
+                if self.refresh_token:
+                    try:
+                        await self._refresh_access_token()
+                        return
+                    except AgiloftAuthError as e:
+                        logger.warning(f"Token refresh failed, falling back to authentication: {e}")
+                        self.refresh_token = None
+
                 await self._authenticate()
                 
     async def _authenticate(self):
@@ -90,6 +100,15 @@ class AgiloftClient:
         if self.auth_method == "oauth2_client_credentials":
             await self._authenticate_oauth2_client_credentials()
         elif self.auth_method == "oauth2_authorization_code":
+            # Try refresh token if available before requiring browser auth
+            if self.refresh_token:
+                try:
+                    await self._refresh_access_token()
+                    return
+                except AgiloftAuthError as e:
+                    logger.warning(f"Token refresh failed in _authenticate: {e}")
+                    self.refresh_token = None
+
             # For authorization code flow, the user must call authenticate_with_browser() first
             raise AgiloftAuthError(
                 "OAuth2 Authorization Code flow requires manual authentication. "
@@ -317,6 +336,10 @@ class AgiloftClient:
         """Exchange authorization code for access token."""
         await self.ensure_session()
 
+        # Store api_access_point for future token refresh requests
+        if api_access_point:
+            self.api_access_point = api_access_point
+
         # Use api_access_point if provided, otherwise use base_url
         if api_access_point:
             token_url = f"{api_access_point}/ewws/otoken"
@@ -361,8 +384,7 @@ class AgiloftClient:
                     raise AgiloftAuthError(f"Expected JSON response but got {content_type}. Response: {response_text[:500]}")
 
                 # Parse JSON response
-                import json as json_lib
-                data = json_lib.loads(response_text)
+                data = json.loads(response_text)
 
                 # Extract access token
                 self.access_token = data.get('access_token')
@@ -387,6 +409,93 @@ class AgiloftClient:
             logger.error(f"Token exchange error: {str(e)}")
             raise AgiloftAuthError(f"Token exchange failed: {str(e)}")
 
+    async def _refresh_access_token(self):
+        """Refresh the access token using the stored refresh token.
+
+        Uses the refresh_token grant type to obtain a new access token
+        without requiring browser-based re-authentication.
+
+        Raises:
+            AgiloftAuthError: If the refresh token is missing or the refresh request fails.
+        """
+        if not self.refresh_token:
+            raise AgiloftAuthError("No refresh token available for token refresh")
+
+        await self.ensure_session()
+
+        # Determine token endpoint URL
+        if self.oauth2_token_endpoint:
+            token_url = self.oauth2_token_endpoint
+        elif self.api_access_point:
+            token_url = f"{self.api_access_point}/ewws/otoken"
+        else:
+            base_url = self.base_url.split('/ewws/alrest')[0]
+            token_url = f"{base_url}/ewws/otoken"
+
+        logger.info(f"Refreshing access token via {token_url}...")
+
+        token_data = {
+            'grant_type': 'refresh_token',
+            'refresh_token': self.refresh_token,
+            'client_id': self.oauth2_client_id,
+            'redirect_uri': self.oauth2_redirect_uri
+        }
+
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json"
+        }
+
+        try:
+            async with self.session.post(
+                token_url,
+                data=token_data,
+                headers=headers
+            ) as response:
+                response_text = await response.text()
+
+                if response.status != 200:
+                    error_msg = f"Token refresh failed: {response.status} - {response_text}"
+                    logger.error(error_msg)
+                    raise AgiloftAuthError(error_msg)
+
+                # Check if response is JSON
+                content_type = response.headers.get('Content-Type', '')
+                if 'application/json' not in content_type:
+                    logger.error(f"Unexpected content type on refresh: {content_type}")
+                    raise AgiloftAuthError(
+                        f"Expected JSON response but got {content_type}. "
+                        f"Response: {response_text[:500]}"
+                    )
+
+                data = json.loads(response_text)
+
+                # Extract new access token
+                new_access_token = data.get('access_token')
+                if not new_access_token:
+                    error_msg = f"No access token in refresh response: {data}"
+                    logger.error(error_msg)
+                    raise AgiloftAuthError(error_msg)
+
+                self.access_token = new_access_token
+
+                # Token expiration (expires_in is in seconds)
+                expires_in = data.get('expires_in', 900)
+                self.token_expires_at = datetime.now() + timedelta(seconds=expires_in)
+
+                # Update refresh token if a new one is provided (rotation)
+                new_refresh_token = data.get('refresh_token')
+                if new_refresh_token:
+                    self.refresh_token = new_refresh_token
+
+                logger.info(f"Token refresh successful. New token expires at {self.token_expires_at}")
+
+        except AgiloftAuthError:
+            raise
+        except Exception as e:
+            logger.error(f"Token refresh error: {str(e)}")
+            raise AgiloftAuthError(f"Token refresh failed: {str(e)}")
+
     def _get_auth_headers(self) -> Dict[str, str]:
         """Get authentication headers for API requests."""
         if not self.access_token:
@@ -402,32 +511,49 @@ class AgiloftClient:
         """Make an authenticated request to the Agiloft API."""
         await self.ensure_authenticated()
         await self.ensure_session()
-        
+
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         headers = self._get_auth_headers()
-        
+
         # Add language parameter if not already present
         params = kwargs.get('params', {})
         if 'lang' not in params:
             params['lang'] = self.language
             kwargs['params'] = params
-            
+
         # Merge headers
         if 'headers' in kwargs:
             headers.update(kwargs['headers'])
         kwargs['headers'] = headers
-        
+
+        # Snapshot current token to detect concurrent refresh by another coroutine
+        token_before_request = self.access_token
+
         logger.debug(f"{method.upper()} {url}")
-        
+
         try:
             async with self.session.request(method, url, **kwargs) as response:
                 response_text = await response.text()
                 response_headers = dict(response.headers)
-                
+
                 if response.status == 401:
-                    # Token might be expired, try re-authenticating once
-                    logger.warning(f"Received 401 for {method} {url}, attempting re-authentication...")
-                    await self._authenticate()
+                    # Token expired — acquire lock to prevent concurrent refresh races.
+                    # Without the lock, two concurrent 401s could both attempt refresh,
+                    # and with token rotation the second refresh would use an invalidated token.
+                    logger.warning(f"Received 401 for {method} {url}, attempting token refresh...")
+                    async with self._auth_lock:
+                        if self.access_token != token_before_request:
+                            # Another concurrent request already refreshed the token
+                            logger.info("Token already refreshed by concurrent request, retrying")
+                        elif self.refresh_token:
+                            try:
+                                await self._refresh_access_token()
+                            except AgiloftAuthError as e:
+                                logger.warning(f"Token refresh failed on 401 retry, falling back to _authenticate: {e}")
+                                self.refresh_token = None
+                                await self._authenticate()
+                        else:
+                            await self._authenticate()
 
                     # Retry the request with new token
                     kwargs['headers'] = self._get_auth_headers()
@@ -587,3 +713,4 @@ class AgiloftClient:
                 self.access_token = None
                 self.refresh_token = None
                 self.token_expires_at = None
+                self.api_access_point = None
